@@ -8,7 +8,6 @@ contract BankAccount {
         uint256 value,
         uint256 timestamp
     );
-
     event WithdrawRequested(
         address indexed user,
         uint256 indexed accountId,
@@ -16,46 +15,53 @@ contract BankAccount {
         uint256 amount,
         uint256 timestamp
     );
-
-    event Withdraw(uint256 indexed accountId, uint timestamp);
-    event AccountCreated(address[] owners, uint indexed id, uint timestamp);
+    event Withdraw(uint256 indexed withdrawId, uint256 timestamp);
+    event AccountCreated(
+        address[] owners,
+        uint256 indexed id,
+        uint256 timestamp
+    );
 
     struct WithdrawRequest {
         address user;
-        uint amount;
-        uint approvals;
+        uint256 amount;
+        uint256 approvals;
         mapping(address => bool) ownersApproved;
         bool approved;
     }
+
     struct Account {
         address[] owners;
-        uint balance;
-        mapping(uint => WithdrawRequest) withdrawRequests;
+        uint256 balance;
+        mapping(uint256 => WithdrawRequest) withdrawRequests;
     }
 
-    mapping(uint => Account) accounts;
-    mapping(address => uint[]) userAccounts;
+    mapping(uint256 => Account) accounts;
+    mapping(address => uint256[]) userAccounts;
 
-    uint nextAccountId;
-    uint nextWithdrawId;
+    uint256 nextAccountId;
+    uint256 nextWithdrawId;
 
-    modifier accountOwner(uint accountId) {
+    modifier accountOwner(uint256 accountId) {
         bool isOwner;
-        address[] memory owners = accounts[accountId].owners;
-        for (uint i; i < owners.length; i++) {
-            if (msg.sender == owners[i]) {
+        for (uint256 idx; idx < accounts[accountId].owners.length; idx++) {
+            if (accounts[accountId].owners[idx] == msg.sender) {
                 isOwner = true;
                 break;
             }
         }
-        require(isOwner, "You are not an owner of this account");
+        require(isOwner, "you are not an owner of this account");
         _;
     }
 
     modifier validOwners(address[] calldata owners) {
         require(owners.length + 1 <= 4, "maximum of 4 owners per account");
-        for (uint i; i < owners.length; i++) {
-            for (uint j = i + 1; j < owners.length; j++) {
+        for (uint256 i; i < owners.length; i++) {
+            if (owners[i] == msg.sender) {
+                revert("no duplicate owners");
+            }
+
+            for (uint256 j = i + 1; j < owners.length; j++) {
                 if (owners[i] == owners[j]) {
                     revert("no duplicate owners");
                 }
@@ -64,50 +70,48 @@ contract BankAccount {
         _;
     }
 
-    modifier canApprove(uint accountId, uint withdrawId) {
+    modifier sufficientBalance(uint256 accountId, uint256 amount) {
+        require(accounts[accountId].balance >= amount, "insufficient balance");
+        _;
+    }
+
+    modifier canApprove(uint256 accountId, uint256 withdrawId) {
         require(
             !accounts[accountId].withdrawRequests[withdrawId].approved,
             "this request is already approved"
         );
         require(
             accounts[accountId].withdrawRequests[withdrawId].user != msg.sender,
-            "You cannot approve this request"
+            "you cannot approve this request"
         );
-
         require(
             accounts[accountId].withdrawRequests[withdrawId].user != address(0),
-            "This request doesn't exists"
+            "this request does not exist"
         );
-
         require(
             !accounts[accountId].withdrawRequests[withdrawId].ownersApproved[
                 msg.sender
             ],
-            "You have already approved this request"
+            "you have already approved this request"
         );
-
         _;
     }
 
-    modifier suffientBalance(uint accountId, uint amount) {
-        require(accounts[accountId].balance >= amount, "Insufficient balance");
-        _;
-    }
-
-    modifier canWithdraw(uint accountId, uint withdrawId) {
+    modifier canWithdraw(uint256 accountId, uint256 withdrawId) {
         require(
-            accounts[accountId].withdrawRequests[withdrawId].user != msg.sender,
-            "You didn't create this request"
+            accounts[accountId].withdrawRequests[withdrawId].user == msg.sender,
+            "you did not create this request"
         );
         require(
             accounts[accountId].withdrawRequests[withdrawId].approved,
-            "Request not approved"
+            "this request is not approved"
         );
-
         _;
     }
 
-    function deposit(uint accountId) external payable accountOwner(accountId) {
+    function deposit(
+        uint256 accountId
+    ) external payable accountOwner(accountId) {
         accounts[accountId].balance += msg.value;
     }
 
@@ -117,18 +121,17 @@ contract BankAccount {
         address[] memory owners = new address[](otherOwners.length + 1);
         owners[otherOwners.length] = msg.sender;
 
-        uint id = nextAccountId;
+        uint256 id = nextAccountId;
 
-        for (uint i; i < owners.length; i++) {
-            if (i < otherOwners.length - 1) {
-                owners[i] = otherOwners[i];
+        for (uint256 idx; idx < owners.length; idx++) {
+            if (idx < owners.length - 1) {
+                owners[idx] = otherOwners[idx];
             }
 
-            if (userAccounts[owners[i]].length > 2) {
-                revert("each user can have a max of three accounts");
+            if (userAccounts[owners[idx]].length > 2) {
+                revert("each user can have a max of 3 accounts");
             }
-
-            userAccounts[owners[i]].push(id);
+            userAccounts[owners[idx]].push(id);
         }
 
         accounts[id].owners = owners;
@@ -136,11 +139,11 @@ contract BankAccount {
         emit AccountCreated(owners, id, block.timestamp);
     }
 
-    function requestWithdraw(
-        uint accountId,
-        uint amount
-    ) external accountOwner(accountId) suffientBalance(accountId, amount) {
-        uint id = nextWithdrawId;
+    function requestWithdrawl(
+        uint256 accountId,
+        uint256 amount
+    ) external accountOwner(accountId) sufficientBalance(accountId, amount) {
+        uint256 id = nextWithdrawId;
         WithdrawRequest storage request = accounts[accountId].withdrawRequests[
             id
         ];
@@ -157,13 +160,12 @@ contract BankAccount {
     }
 
     function approveWithdrawl(
-        uint accountId,
-        uint withdrawId
+        uint256 accountId,
+        uint256 withdrawId
     ) external accountOwner(accountId) canApprove(accountId, withdrawId) {
         WithdrawRequest storage request = accounts[accountId].withdrawRequests[
             withdrawId
         ];
-
         request.approvals++;
         request.ownersApproved[msg.sender] = true;
 
@@ -173,39 +175,41 @@ contract BankAccount {
     }
 
     function withdraw(
-        uint accountId,
-        uint withdrawId
+        uint256 accountId,
+        uint256 withdrawId
     ) external canWithdraw(accountId, withdrawId) {
-        uint amount = accounts[accountId].withdrawRequests[withdrawId].amount;
-        require(
-            accounts[accountId].balance >= amount,
-            "Insufficient funds to withdraw"
-        );
+        uint256 amount = accounts[accountId]
+            .withdrawRequests[withdrawId]
+            .amount;
+        require(accounts[accountId].balance >= amount, "insufficient balance");
 
         accounts[accountId].balance -= amount;
         delete accounts[accountId].withdrawRequests[withdrawId];
 
         (bool sent, ) = payable(msg.sender).call{value: amount}("");
-        require(sent, "Withdrawl failed");
-        emit Withdraw(accountId, block.timestamp);
+        require(sent);
+
+        emit Withdraw(withdrawId, block.timestamp);
     }
 
-    function getBalance(uint accountId) public view returns (uint) {
+    function getBalance(uint256 accountId) public view returns (uint256) {
         return accounts[accountId].balance;
     }
 
-    function getOwners(uint accountId) public view returns (address[] memory) {
+    function getOwners(
+        uint256 accountId
+    ) public view returns (address[] memory) {
         return accounts[accountId].owners;
     }
 
     function getApprovals(
-        uint accountId,
-        uint withdrawId
-    ) public view returns (uint) {
+        uint256 accountId,
+        uint256 withdrawId
+    ) public view returns (uint256) {
         return accounts[accountId].withdrawRequests[withdrawId].approvals;
     }
 
-    function getAccounts() public view returns (uint[] memory) {
+    function getAccounts() public view returns (uint256[] memory) {
         return userAccounts[msg.sender];
     }
 }
