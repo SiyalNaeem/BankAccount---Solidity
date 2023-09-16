@@ -48,15 +48,3 @@ async function getAccess() {
     eventLog.append(`Account Created: ID = ${id}, Owners = ${owner}`);
   });
 }
-
-// async function getAccess() {
-//   if (contract) return;
-//   await provider.send("eth_requestAccounts", []);
-//   const signer = provider.getSigner();
-//   contract = new ethers.Contract(address, abi, signer);
-
-//   const eventLog = document.getElementById("events");
-//   contract.on("AccountCreated", (owners, id, event) => {
-//     eventLog.append(`Account Created: ID = ${id}, Owners = ${owners}`);
-//   });
-// }
